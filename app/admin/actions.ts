@@ -15,6 +15,7 @@ import { requireUser, invalidateSessionCache } from '@/lib/auth/session';
 import { isMissingStaffAssignmentTableError } from '@/lib/auth/staff-assignments';
 import { prisma } from '@/lib/db/prisma';
 import { canMakeFinalUserDecision, STAFF_ROLES, USER_ROLES } from '@/lib/permissions';
+import { getPostCategoryModerationResult } from '@/lib/posts/post-category-moderation';
 import type { SessionUser } from '@/lib/auth/types';
 import type { StaffRole, UserStatus } from '@prisma/client';
 import {
@@ -824,6 +825,107 @@ export async function pinPostAction(formData: FormData) {
   revalidatePath('/posts');
   revalidatePath(`/posts/${postId}`);
   redirect(`/admin/posts?success=${encodeURIComponent('게시글을 상단에 고정했어요.')}`);
+}
+
+export async function adminChangePostCategoryAction(formData: FormData) {
+  const user = await requireUser();
+  requireAdmin(user);
+
+  const postId = normalizeText(formData.get('postId'));
+  const categoryId = normalizeText(formData.get('categoryId'));
+
+  if (!postId || !categoryId) {
+    redirect('/admin/posts?error=게시글 또는 카테고리 정보가 없습니다.');
+  }
+
+  const [post, nextCategory] = await Promise.all([
+    prisma.post.findUnique({
+      where: { id: postId },
+      select: {
+        id: true,
+        price: true,
+        category: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    }),
+    prisma.category.findFirst({
+      where: { id: categoryId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+      },
+    }),
+  ]);
+
+  if (!post) {
+    redirect('/admin/posts?error=게시글을 찾을 수 없습니다.');
+  }
+
+  if (!nextCategory) {
+    redirect('/admin/posts?error=변경할 카테고리를 찾을 수 없습니다.');
+  }
+
+  const changeResult = getPostCategoryModerationResult({
+    currentCategory: post.category,
+    nextCategory,
+    hasPrice: post.price !== null,
+  });
+
+  if (!changeResult.ok) {
+    redirect(`/admin/posts?error=${encodeURIComponent(changeResult.message)}`);
+  }
+
+  if (changeResult.noop) {
+    redirect(`/admin/posts?success=${encodeURIComponent('이미 해당 카테고리로 설정된 글입니다.')}`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.post.update({
+      where: { id: postId },
+      data: {
+        categoryId: nextCategory.id,
+        price: changeResult.clearPrice ? null : undefined,
+      },
+    });
+
+    if (changeResult.clearTags) {
+      await tx.postTag.deleteMany({
+        where: { postId },
+      });
+    }
+
+    await tx.moderationAction.create({
+      data: {
+        actorId: user.id,
+        targetType: 'POST',
+        targetId: postId,
+        actionType: 'CHANGE_CATEGORY',
+        reason: JSON.stringify({
+          fromCategoryId: post.category.id,
+          fromCategoryName: post.category.name,
+          fromCategoryType: post.category.type,
+          toCategoryId: nextCategory.id,
+          toCategoryName: nextCategory.name,
+          toCategoryType: nextCategory.type,
+          clearedPrice: changeResult.clearPrice,
+          clearedTags: changeResult.clearTags,
+        }),
+      },
+    });
+  });
+
+  revalidatePath('/admin/posts');
+  revalidatePath('/moderator');
+  revalidatePath('/posts');
+  revalidatePath('/my/posts');
+  revalidatePath(`/posts/${postId}`);
+  redirect(`/admin/posts?success=${encodeURIComponent('게시글 카테고리를 변경했어요.')}`);
 }
 
 export async function unpinPostAction(formData: FormData) {

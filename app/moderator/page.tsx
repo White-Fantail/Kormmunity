@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { ReportReviewStatus } from '@prisma/client';
 
 import {
+  changePostCategoryAction,
   holdPostAction,
   restorePostAction,
   requestUserReviewAction,
@@ -17,12 +18,13 @@ import { canModerate } from '@/lib/permissions';
 import { DateTimeText } from '@/components/ui/date-time-text';
 import { FormSubmitButton } from '@/components/ui/form-submit-button';
 import { truncatePostBody } from '@/lib/posts/constants';
+import { getCategoryDisplayName } from '@/lib/posts/category-display';
 
 
 export const dynamic = 'force-dynamic';
 
 type CoordinatorPageProps = {
-  searchParams: Promise<{ status?: string; error?: string; uq?: string }>;
+  searchParams: Promise<{ status?: string; error?: string; success?: string; uq?: string }>;
 };
 
 export default async function CoordinatorPage({ searchParams }: CoordinatorPageProps) {
@@ -60,7 +62,7 @@ export default async function CoordinatorPage({ searchParams }: CoordinatorPageP
       },
     });
 
-  const [posts, recentUsers, unresolvedPostReportCount, unresolvedCommentReportCount] = await Promise.all([
+  const [posts, recentUsers, unresolvedPostReportCount, unresolvedCommentReportCount, categories] = await Promise.all([
     prisma.post.findMany({
       where: {
         status: statusFilter as 'PUBLISHED' | 'HELD' | 'DELETED',
@@ -77,7 +79,7 @@ export default async function CoordinatorPage({ searchParams }: CoordinatorPageP
         heldAt: true,
         createdAt: true,
         author: { select: { id: true, displayName: true } },
-        category: { select: { name: true } },
+        category: { select: { id: true, name: true, type: true } },
         city: { select: { name: true } },
         _count: { select: { reports: true } },
       },
@@ -88,6 +90,11 @@ export default async function CoordinatorPage({ searchParams }: CoordinatorPageP
     }),
     prisma.commentReport.count({
       where: { reviewStatus: ReportReviewStatus.PENDING },
+    }),
+    prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, name: true, type: true },
     }),
   ]);
   const unresolvedReportCount = unresolvedPostReportCount + unresolvedCommentReportCount;
@@ -108,6 +115,9 @@ export default async function CoordinatorPage({ searchParams }: CoordinatorPageP
 
       {params.error ? (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{params.error}</p>
+      ) : null}
+      {params.success ? (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">{params.success}</p>
       ) : null}
 
       {unresolvedReportCount > 0 ? (
@@ -150,7 +160,7 @@ export default async function CoordinatorPage({ searchParams }: CoordinatorPageP
             {posts.map((post) => (
               <li key={post.id} className="rounded-xl border border-[#e8e8e8] p-3">
                 <div className="mb-1 flex flex-wrap gap-2 text-xs text-[#888]">
-                  <span className="rounded-full bg-[#fffde7] px-2 py-0.5 font-medium text-[#7a6000]">{post.category.name}</span>
+                  <span className="rounded-full bg-[#fffde7] px-2 py-0.5 font-medium text-[#7a6000]">{getCategoryDisplayName(post.category)}</span>
                   <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5">{post.city?.name ?? '전 지역'}</span>
                   <span
                     className={`rounded-full px-2 py-0.5 ${
@@ -180,6 +190,33 @@ export default async function CoordinatorPage({ searchParams }: CoordinatorPageP
                 ) : null}
 
                 <div className="mt-2 flex flex-wrap gap-2">
+                  {post.status !== 'DELETED' ? (
+                    <details className="w-full">
+                      <summary className="inline-block cursor-pointer rounded-xl border border-[#e8e8e8] px-3 py-1 text-sm font-medium hover:bg-[#f9f9f9]">
+                        카테고리 변경
+                      </summary>
+                      <form action={changePostCategoryAction} className="mt-2 flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="postId" value={post.id} />
+                        <select
+                          name="categoryId"
+                          defaultValue={post.category.id}
+                          className="min-w-44 rounded-lg border border-[#e8e8e8] px-3 py-2 text-sm focus:border-[#fee500] focus:outline-none focus:ring-2 focus:ring-[#fee500]/40"
+                        >
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {getCategoryDisplayName(category)}
+                            </option>
+                          ))}
+                        </select>
+                        <FormSubmitButton
+                          idleLabel="변경"
+                          pendingLabel="변경 중..."
+                          className="rounded-xl border border-[#e8e8e8] px-3 py-2 text-sm font-medium hover:bg-[#f9f9f9]"
+                        />
+                      </form>
+                    </details>
+                  ) : null}
+
                   {post.status === 'PUBLISHED' ? (
                     <details className="w-full">
                       <summary className="inline-block cursor-pointer rounded-xl border border-yellow-300 bg-[#fffde7] px-3 py-1 text-sm font-medium text-[#7a6000]">

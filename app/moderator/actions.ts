@@ -14,6 +14,7 @@ import {
   canModerateUser,
   canMakeFinalUserDecision,
 } from '@/lib/permissions';
+import { getPostCategoryModerationResult } from '@/lib/posts/post-category-moderation';
 import {
   applyCommunityScoreChange,
 } from '@/lib/community-score';
@@ -206,6 +207,110 @@ export async function restorePostAction(formData: FormData) {
   revalidatePath('/posts');
   revalidatePath(`/posts/${postId}`);
   redirect('/moderator');
+}
+
+export async function changePostCategoryAction(formData: FormData) {
+  const user = await requireUser();
+
+  if (!canModerate(user)) {
+    redirect('/moderator?error=권한이 없습니다.');
+  }
+
+  const postId = normalizeText(formData.get('postId'));
+  const categoryId = normalizeText(formData.get('categoryId'));
+
+  if (!postId || !categoryId) {
+    redirect('/moderator?error=게시글 또는 카테고리 정보가 없습니다.');
+  }
+
+  const [post, nextCategory] = await Promise.all([
+    prisma.post.findUnique({
+      where: { id: postId },
+      select: {
+        id: true,
+        price: true,
+        category: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    }),
+    prisma.category.findFirst({
+      where: { id: categoryId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+      },
+    }),
+  ]);
+
+  if (!post) {
+    redirect('/moderator?error=게시글을 찾을 수 없습니다.');
+  }
+
+  if (!nextCategory) {
+    redirect('/moderator?error=변경할 카테고리를 찾을 수 없습니다.');
+  }
+
+  const changeResult = getPostCategoryModerationResult({
+    currentCategory: post.category,
+    nextCategory,
+    hasPrice: post.price !== null,
+  });
+
+  if (!changeResult.ok) {
+    redirect(`/moderator?error=${encodeURIComponent(changeResult.message)}`);
+  }
+
+  if (changeResult.noop) {
+    redirect(`/moderator?success=${encodeURIComponent('이미 해당 카테고리로 설정된 글입니다.')}`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.post.update({
+      where: { id: postId },
+      data: {
+        categoryId: nextCategory.id,
+        price: changeResult.clearPrice ? null : undefined,
+      },
+    });
+
+    if (changeResult.clearTags) {
+      await tx.postTag.deleteMany({
+        where: { postId },
+      });
+    }
+
+    await tx.moderationAction.create({
+      data: {
+        actorId: user.id,
+        targetType: 'POST',
+        targetId: postId,
+        actionType: 'CHANGE_CATEGORY',
+        reason: JSON.stringify({
+          fromCategoryId: post.category.id,
+          fromCategoryName: post.category.name,
+          fromCategoryType: post.category.type,
+          toCategoryId: nextCategory.id,
+          toCategoryName: nextCategory.name,
+          toCategoryType: nextCategory.type,
+          clearedPrice: changeResult.clearPrice,
+          clearedTags: changeResult.clearTags,
+        }),
+      },
+    });
+  });
+
+  revalidatePath('/admin/posts');
+  revalidatePath('/moderator');
+  revalidatePath('/posts');
+  revalidatePath('/my/posts');
+  revalidatePath(`/posts/${postId}`);
+  redirect(`/moderator?success=${encodeURIComponent('게시글 카테고리를 변경했어요.')}`);
 }
 
 export async function holdCommentAction(formData: FormData) {
