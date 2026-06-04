@@ -1,7 +1,13 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { adminDeletePostAction, adminRestorePostAction, pinPostAction, unpinPostAction } from '@/app/admin/actions';
+import {
+  adminChangePostCategoryAction,
+  adminDeletePostAction,
+  adminRestorePostAction,
+  pinPostAction,
+  unpinPostAction,
+} from '@/app/admin/actions';
 import { adminManagementNavItems, ManagementSectionNav } from '@/components/admin/management-section-nav';
 import { getCurrentUser } from '@/lib/auth/session';
 import { prisma } from '@/lib/db/prisma';
@@ -9,6 +15,7 @@ import { canMakeFinalUserDecision } from '@/lib/permissions';
 import { DateTimeText } from '@/components/ui/date-time-text';
 import { FormSubmitButton } from '@/components/ui/form-submit-button';
 import { truncatePostBody } from '@/lib/posts/constants';
+import { getCategoryDisplayName } from '@/lib/posts/category-display';
 import { PINNED_POST_ORDER_DESC } from '@/lib/posts/pinned-order';
 
 
@@ -29,49 +36,55 @@ export default async function AdminPostsPage({ searchParams }: AdminPostsPagePro
   const params = await searchParams;
   const statusFilter = params.status ?? 'HELD';
 
-  const posts = await prisma.post.findMany({
-    where: {
-      status: statusFilter as 'PUBLISHED' | 'HELD' | 'DELETED',
-    },
-    orderBy: PINNED_POST_ORDER_DESC,
-    take: 50,
-    select: {
-      id: true,
-      title: true,
-      body: true,
-      status: true,
-      isPinned: true,
-      communityScore: true,
-      heldReason: true,
-      deletedReason: true,
-      heldAt: true,
-      deletedAt: true,
-      createdAt: true,
-      author: { select: { id: true, displayName: true } },
-      category: { select: { name: true, type: true } },
-      tags: {
-        select: {
-          postTagOption: { select: { id: true, label: true, isActive: true } },
-        },
+  const [posts, moderationActions, categories] = await Promise.all([
+    prisma.post.findMany({
+      where: {
+        status: statusFilter as 'PUBLISHED' | 'HELD' | 'DELETED',
       },
-      city: { select: { name: true } },
-      _count: { select: { reports: true } },
-    },
-  });
-
-  const moderationActions = await prisma.moderationAction.findMany({
-    where: { targetType: 'POST' },
-    orderBy: { createdAt: 'desc' },
-    take: 20,
-    select: {
-      id: true,
-      targetId: true,
-      actionType: true,
-      reason: true,
-      createdAt: true,
-      actor: { select: { displayName: true } },
-    },
-  });
+      orderBy: PINNED_POST_ORDER_DESC,
+      take: 50,
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        status: true,
+        isPinned: true,
+        communityScore: true,
+        heldReason: true,
+        deletedReason: true,
+        heldAt: true,
+        deletedAt: true,
+        createdAt: true,
+        author: { select: { id: true, displayName: true } },
+        category: { select: { id: true, name: true, type: true } },
+        tags: {
+          select: {
+            postTagOption: { select: { id: true, label: true, isActive: true } },
+          },
+        },
+        city: { select: { name: true } },
+        _count: { select: { reports: true } },
+      },
+    }),
+    prisma.moderationAction.findMany({
+      where: { targetType: 'POST' },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        targetId: true,
+        actionType: true,
+        reason: true,
+        createdAt: true,
+        actor: { select: { displayName: true } },
+      },
+    }),
+    prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, name: true, type: true },
+    }),
+  ]);
 
   const statusOptions = [
     { value: 'PUBLISHED', label: '게시됨' },
@@ -121,7 +134,7 @@ export default async function AdminPostsPage({ searchParams }: AdminPostsPagePro
             {posts.map((post) => (
               <li key={post.id} className="space-y-2 rounded-xl border border-[#e8e8e8] p-3">
                 <div className="flex flex-wrap gap-2 text-xs text-[#888]">
-                  <span className="rounded-full bg-[#fffde7] px-2 py-0.5 font-medium text-[#7a6000]">{post.category.name}</span>
+                  <span className="rounded-full bg-[#fffde7] px-2 py-0.5 font-medium text-[#7a6000]">{getCategoryDisplayName(post.category)}</span>
                   <span className="rounded-full bg-[#eef2ff] px-2 py-0.5 text-[#3730a3]">{post.category.type}</span>
                   <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5">{post.city?.name ?? '전 지역'}</span>
                   {post.tags.map((tag) => (
@@ -186,6 +199,33 @@ export default async function AdminPostsPage({ searchParams }: AdminPostsPagePro
                         }`}
                       />
                     </form>
+                  ) : null}
+
+                  {post.status !== 'DELETED' ? (
+                    <details>
+                      <summary className="cursor-pointer rounded-xl border border-[#e8e8e8] px-2 py-1 text-xs font-medium hover:bg-[#f9f9f9]">
+                        카테고리 변경
+                      </summary>
+                      <form action={adminChangePostCategoryAction} className="mt-2 flex flex-wrap items-center gap-2">
+                        <input type="hidden" name="postId" value={post.id} />
+                        <select
+                          name="categoryId"
+                          defaultValue={post.category.id}
+                          className="min-w-44 rounded-lg border border-[#e8e8e8] px-2 py-1 text-sm focus:border-[#fee500] focus:outline-none"
+                        >
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {getCategoryDisplayName(category)}
+                            </option>
+                          ))}
+                        </select>
+                        <FormSubmitButton
+                          idleLabel="변경"
+                          pendingLabel="변경 중..."
+                          className="rounded-xl border border-[#e8e8e8] px-3 py-1 text-xs font-medium hover:bg-[#f9f9f9]"
+                        />
+                      </form>
+                    </details>
                   ) : null}
 
                   {post.status !== 'DELETED' ? (
