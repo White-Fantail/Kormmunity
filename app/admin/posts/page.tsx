@@ -135,7 +135,6 @@ export default async function AdminPostsPage({ searchParams }: AdminPostsPagePro
               <li key={post.id} className="space-y-2 rounded-xl border border-[#e8e8e8] p-3">
                 <div className="flex flex-wrap gap-2 text-xs text-[#888]">
                   <span className="rounded-full bg-[#fffde7] px-2 py-0.5 font-medium text-[#7a6000]">{getCategoryDisplayName(post.category)}</span>
-                  <span className="rounded-full bg-[#eef2ff] px-2 py-0.5 text-[#3730a3]">{post.category.type}</span>
                   <span className="rounded-full bg-[#f5f5f5] px-2 py-0.5">{post.city?.name ?? '전 지역'}</span>
                   {post.tags.map((tag) => (
                     <span
