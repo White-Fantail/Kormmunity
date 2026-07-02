@@ -606,14 +606,18 @@ export default async function PostDetailPage({
       {post.title ? (
         <h1 className="text-xl font-bold">{post.title}</h1>
       ) : null}
+
+      {post.price ? (
+        <div className="inline-flex items-baseline gap-1.5 rounded-xl bg-[#3c1e1e] px-4 py-2 shadow-sm">
+          <span className="text-xs font-semibold tracking-wide text-[#f5d9a8] uppercase">NZD</span>
+          <span className="text-2xl font-bold text-white">{post.price.toString()}</span>
+        </div>
+      ) : null}
+
       <PostMarkdown body={post.body} />
 
       {post.images.length > 0 ? (
         <PostImageGallery images={post.images} postTitle={post.title} />
-      ) : null}
-
-      {post.price ? (
-        <p className="text-base font-bold text-[#3c1e1e]">가격: NZD {post.price.toString()}</p>
       ) : null}
 
       <div className="flex items-center gap-2 text-sm text-[#888]">
