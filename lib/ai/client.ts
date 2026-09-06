@@ -1,8 +1,10 @@
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'openrouter/auto';
 const DEFAULT_POST_MODEL = 'google/gemini-3-flash-preview';
+const DEFAULT_COMMENT_MODEL = 'google/gemini-3-flash-preview';
 const DEFAULT_COST_TIER = 'low';
 const DEFAULT_TIMEOUT_MS = 22_000;
+const DEFAULT_COMMENT_TIMEOUT_MS = 10_000;
 
 type OpenRouterCostTier = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 type AiGenerationTask = 'generic' | 'post' | 'comment';
@@ -42,9 +44,10 @@ function getTimeoutMs(task: AiGenerationTask) {
         : undefined;
   const raw = Number(taskSpecificRaw ?? process.env.OPENROUTER_TIMEOUT_MS ?? '');
   if (!Number.isFinite(raw) || raw < 1_000 || raw > 25_000) {
-    return DEFAULT_TIMEOUT_MS;
+    return task === 'comment' ? DEFAULT_COMMENT_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
   }
-  return Math.floor(raw);
+  const parsed = Math.floor(raw);
+  return task === 'comment' ? Math.min(parsed, DEFAULT_COMMENT_TIMEOUT_MS) : parsed;
 }
 
 function getCostTier(): OpenRouterCostTier {
@@ -60,7 +63,7 @@ function getModel(task: AiGenerationTask) {
     return process.env.OPENROUTER_POST_MODEL?.trim() || DEFAULT_POST_MODEL;
   }
   if (task === 'comment') {
-    return process.env.OPENROUTER_COMMENT_MODEL?.trim() || process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
+    return process.env.OPENROUTER_COMMENT_MODEL?.trim() || DEFAULT_COMMENT_MODEL;
   }
   return process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
 }
@@ -85,65 +88,85 @@ export async function generateJsonWithChatModel<T>({
   const baseUrl = normalizeApiBaseUrl(
     process.env.OPENROUTER_API_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE_URL,
   );
-  const controller = new AbortController();
   const timeoutMs = getTimeoutMs(task);
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const maxAttempts = task === 'comment' ? 2 : 1;
 
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-        plugins: model === 'openrouter/auto'
-          ? [{ id: 'auto-router', cost_tier: getCostTier() }]
-          : undefined,
-        provider: {
-          allow_fallbacks: true,
-          require_parameters: true,
-          data_collection: 'deny',
-          ...(task === 'post' ? { sort: 'throughput' } : {}),
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
         },
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-      }),
-      signal: controller.signal,
-    });
+        body: JSON.stringify({
+          model,
+          temperature,
+          max_tokens: maxTokens,
+          response_format: { type: 'json_object' },
+          plugins: model === 'openrouter/auto'
+            ? [{ id: 'auto-router', cost_tier: getCostTier() }]
+            : undefined,
+          provider: {
+            allow_fallbacks: true,
+            require_parameters: true,
+            data_collection: 'deny',
+            ...(task === 'post' || task === 'comment' ? { sort: 'throughput' } : {}),
+          },
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        }),
+        signal: controller.signal,
+      });
 
-    const payload = (await response.json().catch(() => null)) as ChatCompletionResponse | null;
-    if (!response.ok) {
-      const message = payload?.error?.message?.trim();
-      throw new Error(message ? `LLM 호출 실패: ${message}` : `LLM 호출 실패: HTTP ${response.status}`);
+      const payload = (await response.json().catch(() => null)) as ChatCompletionResponse | null;
+      if (!response.ok) {
+        const message = payload?.error?.message?.trim();
+        throw new Error(message ? `LLM 호출 실패: ${message}` : `LLM 호출 실패: HTTP ${response.status}`);
+      }
+
+      const content = payload?.choices?.[0]?.message?.content?.trim();
+      if (!content) {
+        console.warn('[ai] OpenRouter returned empty content', {
+          task,
+          attempt,
+          requestedModel: model,
+          selectedModel: payload?.model ?? model,
+        });
+        if (attempt < maxAttempts) {
+          continue;
+        }
+        throw new Error('LLM 응답이 비어 있어요.');
+      }
+
+      console.info('[ai] OpenRouter generation completed', {
+        task,
+        attempt,
+        requestedModel: model,
+        selectedModel: payload?.model ?? model,
+        costTier: model === 'openrouter/auto' ? getCostTier() : undefined,
+        timeoutMs,
+      });
+
+      return JSON.parse(content) as T;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        if (attempt < maxAttempts) {
+          console.warn('[ai] OpenRouter attempt timed out; retrying', { task, attempt, timeoutMs });
+          continue;
+        }
+        throw new Error('LLM 응답 시간이 초과되었어요. 잠시 후 다시 시도해 주세요.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const content = payload?.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      throw new Error('LLM 응답이 비어 있어요.');
-    }
-
-    console.info('[ai] OpenRouter generation completed', {
-      task,
-      requestedModel: model,
-      selectedModel: payload?.model ?? model,
-      costTier: model === 'openrouter/auto' ? getCostTier() : undefined,
-      timeoutMs,
-    });
-
-    return JSON.parse(content) as T;
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('LLM 응답 시간이 초과되었어요. 잠시 후 다시 시도해 주세요.');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw new Error('LLM 응답을 생성하지 못했어요.');
 }
