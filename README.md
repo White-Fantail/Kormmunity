@@ -87,6 +87,11 @@
 - **사용자 온기 감점 정책 (moderation-confirmed only)**
   - 신고 제출 시점에는 `neighbourWarmth`를 감점하지 않음
   - 확정된 조치에 대해서만 감점: 게시글 신고확정(-1.0), 댓글 신고확정(-1.2), 운영진 보류확정(-3.0), 관리자 삭제확정(-6.0), 허위 신고확정(-2.0)
+- **OpenRouter 기반 운영 계정 AI 생성**
+  - 운영 계정 게시글/댓글 자동 생성은 OpenRouter Chat Completions API 사용
+  - 기본 모델은 `openrouter/auto`, 기본 비용 단계는 `low`
+  - JSON 응답 파라미터를 지원하는 provider만 사용하고 provider 데이터 수집을 차단
+  - Auto Router가 실제 선택한 모델을 서버 로그에 기록
 
 ## Comment-before-contact system
 - 카테고리별로 `requireCommentBeforeContactDefault` 값을 설정할 수 있습니다.
@@ -197,10 +202,11 @@ components/posts/
 - `CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
-- `AI_TEXT_API_KEY` (자동 게시글/댓글 초안 생성용 ChatGPT/OpenAI 호환 API 키)
-- `AI_TEXT_MODEL` (선택, 기본값 `gpt-4o-mini`)
-- `AI_TEXT_API_BASE_URL` (선택, 기본값 `https://api.openai.com/v1`)
-- `AI_TEXT_TIMEOUT_MS` (선택, 기본값 20000)
+- `OPENROUTER_API_KEY` (운영 계정 게시글/댓글 자동 생성용 OpenRouter API 키)
+- `OPENROUTER_MODEL` (선택, 기본값 `openrouter/auto`)
+- `OPENROUTER_COST_TIER` (선택, `low`/`medium`/`high`/`xhigh`/`max`, 기본값 `low`)
+- `OPENROUTER_API_BASE_URL` (선택, 기본값 `https://openrouter.ai/api/v1`)
+- `OPENROUTER_TIMEOUT_MS` (선택, 기본값 30000)
 - `AMAZON_WEB_SERVICE_REGION` (SQS/Lambda 연동 시 권장, `AWS_REGION` 대체)
 - `KAKAO_USE_SQS_PIPELINE` (`true`면 카카오 전송을 SQS 기반으로 비동기 처리)
 - `KAKAO_USE_SEARCH_MATCHER_LAMBDA` (`true`면 게시글 검색 매칭을 별도 람다로 분리)
@@ -211,7 +217,8 @@ components/posts/
 - 카카오 로그인은 `KAKAO_CLIENT_ID`와 `KAKAO_REDIRECT_URI` 환경 변수가 설정된 경우 실제 OAuth 흐름을 사용합니다. 미설정 시 개발용 임시 로그인으로 폴백됩니다.
 - 카카오 개발자 콘솔(https://developers.kakao.com)에서 앱을 등록하고, `KAKAO_REDIRECT_URI`에 `/api/auth/kakao/callback` 경로를 등록해야 합니다.
 - 이미지 업로드는 현재 Cloudinary API 환경 변수 설정이 필요합니다.
-- AI 환경 변수가 없으면 ADMIN 자동 생성 버튼은 보여도 생성 요청은 실패 메시지를 반환합니다.
+- `OPENROUTER_API_KEY`가 없으면 ADMIN 자동 생성 버튼은 보여도 생성 요청은 실패 메시지를 반환합니다.
+- OpenRouter 자동 생성은 기본적으로 `openrouter/auto` + `low` 비용 단계, provider fallback 허용, `require_parameters=true`, `data_collection=deny` 정책을 사용합니다.
 - AWS Amplify + Amazon RDS(PostgreSQL) 배포 시 `DATABASE_URL`은 RDS 연결 문자열로 설정하고, `NEXT_PUBLIC_SITE_URL`(권장) 또는 `NEXTAUTH_URL`을 반드시 설정해야 SEO 메타데이터와 카카오 알림 링크가 올바른 절대 URL을 사용합니다.
 - 카카오 SQS/Lambda 파이프라인은 `nodejs22.x` 런타임을 사용하며, ES module `.js` 번들 실행을 위해 배포 아티팩트 루트에 `package.json`의 `"type": "module"`이 반드시 포함되어야 합니다.
 - 카카오 SQS/Lambda 파이프라인 배포/운영 가이드는 `docs/kakao-notification-pipeline.md`를 참고하세요. Lambda 콘솔에서 수동으로 런타임을 바꿔도 다음 SAM 배포 시 워크플로우 설정값으로 덮어써질 수 있습니다.
