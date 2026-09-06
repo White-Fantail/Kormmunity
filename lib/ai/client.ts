@@ -46,7 +46,8 @@ function getTimeoutMs(task: AiGenerationTask) {
   if (!Number.isFinite(raw) || raw < 1_000 || raw > 25_000) {
     return task === 'comment' ? DEFAULT_COMMENT_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
   }
-  return Math.floor(raw);
+  const parsed = Math.floor(raw);
+  return task === 'comment' ? Math.min(parsed, DEFAULT_COMMENT_TIMEOUT_MS) : parsed;
 }
 
 function getCostTier(): OpenRouterCostTier {
