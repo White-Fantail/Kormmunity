@@ -78,6 +78,7 @@ export async function generateCommentDraft(input: GenerateCommentDraftInput) {
     userPrompt: buildUserPrompt(input),
     temperature: 0.8,
     maxTokens: 500,
+    task: 'comment',
   });
 
   return validateGeneratedCommentBody(response.commentBody);
