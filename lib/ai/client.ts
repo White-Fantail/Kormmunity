@@ -1,9 +1,11 @@
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'openrouter/auto';
+const DEFAULT_POST_MODEL = 'google/gemini-3-flash-preview';
 const DEFAULT_COST_TIER = 'low';
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 22_000;
 
 type OpenRouterCostTier = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+type AiGenerationTask = 'generic' | 'post' | 'comment';
 
 type ChatCompletionChoice = {
   message?: {
@@ -24,15 +26,22 @@ type GenerateJsonInput = {
   userPrompt: string;
   temperature?: number;
   maxTokens?: number;
+  task?: AiGenerationTask;
 };
 
 function normalizeApiBaseUrl(value: string) {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
-function getTimeoutMs() {
-  const raw = Number(process.env.OPENROUTER_TIMEOUT_MS ?? '');
-  if (!Number.isFinite(raw) || raw < 1_000 || raw > 120_000) {
+function getTimeoutMs(task: AiGenerationTask) {
+  const taskSpecificRaw =
+    task === 'post'
+      ? process.env.OPENROUTER_POST_TIMEOUT_MS
+      : task === 'comment'
+        ? process.env.OPENROUTER_COMMENT_TIMEOUT_MS
+        : undefined;
+  const raw = Number(taskSpecificRaw ?? process.env.OPENROUTER_TIMEOUT_MS ?? '');
+  if (!Number.isFinite(raw) || raw < 1_000 || raw > 25_000) {
     return DEFAULT_TIMEOUT_MS;
   }
   return Math.floor(raw);
@@ -46,6 +55,16 @@ function getCostTier(): OpenRouterCostTier {
   return DEFAULT_COST_TIER;
 }
 
+function getModel(task: AiGenerationTask) {
+  if (task === 'post') {
+    return process.env.OPENROUTER_POST_MODEL?.trim() || DEFAULT_POST_MODEL;
+  }
+  if (task === 'comment') {
+    return process.env.OPENROUTER_COMMENT_MODEL?.trim() || process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
+  }
+  return process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
+}
+
 export function isAiGenerationConfigured() {
   return Boolean(process.env.OPENROUTER_API_KEY);
 }
@@ -55,18 +74,20 @@ export async function generateJsonWithChatModel<T>({
   userPrompt,
   temperature = 0.8,
   maxTokens = 900,
+  task = 'generic',
 }: GenerateJsonInput): Promise<T> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY가 설정되지 않아 자동 생성을 사용할 수 없어요.');
   }
 
-  const model = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
+  const model = getModel(task);
   const baseUrl = normalizeApiBaseUrl(
     process.env.OPENROUTER_API_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE_URL,
   );
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), getTimeoutMs());
+  const timeoutMs = getTimeoutMs(task);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -87,6 +108,7 @@ export async function generateJsonWithChatModel<T>({
           allow_fallbacks: true,
           require_parameters: true,
           data_collection: 'deny',
+          ...(task === 'post' ? { sort: 'throughput' } : {}),
         },
         messages: [
           { role: 'system', content: systemPrompt },
@@ -108,9 +130,11 @@ export async function generateJsonWithChatModel<T>({
     }
 
     console.info('[ai] OpenRouter generation completed', {
+      task,
       requestedModel: model,
       selectedModel: payload?.model ?? model,
       costTier: model === 'openrouter/auto' ? getCostTier() : undefined,
+      timeoutMs,
     });
 
     return JSON.parse(content) as T;
