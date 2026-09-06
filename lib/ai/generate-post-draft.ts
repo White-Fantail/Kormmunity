@@ -64,7 +64,8 @@ export async function generatePostDraft(input: GeneratePostDraftInput) {
     systemPrompt: buildSystemPrompt(input.author),
     userPrompt: buildUserPrompt(input),
     temperature: 0.8,
-    maxTokens: 900,
+    maxTokens: 700,
+    task: 'post',
   });
 
   return validateGeneratedPostDraft(
