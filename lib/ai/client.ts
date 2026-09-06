@@ -1,6 +1,9 @@
-const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
-const DEFAULT_MODEL = 'gpt-4o-mini';
-const DEFAULT_TIMEOUT_MS = 20_000;
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_MODEL = 'openrouter/auto';
+const DEFAULT_COST_TIER = 'low';
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+type OpenRouterCostTier = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 type ChatCompletionChoice = {
   message?: {
@@ -9,6 +12,7 @@ type ChatCompletionChoice = {
 } | null;
 
 type ChatCompletionResponse = {
+  model?: string;
   choices?: ChatCompletionChoice[];
   error?: {
     message?: string;
@@ -27,15 +31,23 @@ function normalizeApiBaseUrl(value: string) {
 }
 
 function getTimeoutMs() {
-  const raw = Number(process.env.AI_TEXT_TIMEOUT_MS ?? '');
+  const raw = Number(process.env.OPENROUTER_TIMEOUT_MS ?? '');
   if (!Number.isFinite(raw) || raw < 1_000 || raw > 120_000) {
     return DEFAULT_TIMEOUT_MS;
   }
   return Math.floor(raw);
 }
 
+function getCostTier(): OpenRouterCostTier {
+  const value = process.env.OPENROUTER_COST_TIER?.trim().toLowerCase();
+  if (value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max') {
+    return value;
+  }
+  return DEFAULT_COST_TIER;
+}
+
 export function isAiGenerationConfigured() {
-  return Boolean(process.env.AI_TEXT_API_KEY);
+  return Boolean(process.env.OPENROUTER_API_KEY);
 }
 
 export async function generateJsonWithChatModel<T>({
@@ -44,13 +56,15 @@ export async function generateJsonWithChatModel<T>({
   temperature = 0.8,
   maxTokens = 900,
 }: GenerateJsonInput): Promise<T> {
-  const apiKey = process.env.AI_TEXT_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error('AI_TEXT_API_KEY가 설정되지 않아 자동 생성을 사용할 수 없어요.');
+    throw new Error('OPENROUTER_API_KEY가 설정되지 않아 자동 생성을 사용할 수 없어요.');
   }
 
-  const model = process.env.AI_TEXT_MODEL || DEFAULT_MODEL;
-  const baseUrl = normalizeApiBaseUrl(process.env.AI_TEXT_API_BASE_URL || DEFAULT_OPENAI_BASE_URL);
+  const model = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
+  const baseUrl = normalizeApiBaseUrl(
+    process.env.OPENROUTER_API_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE_URL,
+  );
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), getTimeoutMs());
 
@@ -66,6 +80,14 @@ export async function generateJsonWithChatModel<T>({
         temperature,
         max_tokens: maxTokens,
         response_format: { type: 'json_object' },
+        plugins: model === 'openrouter/auto'
+          ? [{ id: 'auto-router', cost_tier: getCostTier() }]
+          : undefined,
+        provider: {
+          allow_fallbacks: true,
+          require_parameters: true,
+          data_collection: 'deny',
+        },
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
@@ -84,6 +106,12 @@ export async function generateJsonWithChatModel<T>({
     if (!content) {
       throw new Error('LLM 응답이 비어 있어요.');
     }
+
+    console.info('[ai] OpenRouter generation completed', {
+      requestedModel: model,
+      selectedModel: payload?.model ?? model,
+      costTier: model === 'openrouter/auto' ? getCostTier() : undefined,
+    });
 
     return JSON.parse(content) as T;
   } catch (error) {
