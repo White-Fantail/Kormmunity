@@ -5,14 +5,31 @@ its existing Kakao login, staff assignments and Post/Agent API implementation.
 
 ## Setup
 
-1. On staging, apply Prisma migration 20261022093000_mcp_oauth; regenerate Prisma client.
-2. Set NEXT_PUBLIC_SITE_URL to the actual public HTTPS site origin.
+1. On the target deployment (including production), apply Prisma migration
+   20261022093000_mcp_oauth; regenerate Prisma client.
+2. Set NEXT_PUBLIC_SITE_URL to the canonical public HTTPS site origin used
+   for MCP and OAuth. Avoid host redirects (www vs non-www): the configured
+   MCP resource URL must match the URL ChatGPT actually connects to.
 3. Configure real Kakao login (KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_REDIRECT_URI).
 4. Make sure the personal Kakao user has an active ADMIN staff assignment.
 5. Rate limit public /api/oauth/register and /api/oauth/token at the edge/WAF.
 6. Open /admin/mcp to see the MCP URL and revoke old grants.
 7. In ChatGPT, add a custom MCP app pointing at https://YOUR_DOMAIN/api/mcp.
 8. Authorize via Kakao admin login and explicitly approve access on the consent page.
+9. If ChatGPT shows "No tools available for this app", refresh the custom
+   MCP app's tool list or recreate the app after the server deploys, then
+   complete account linking. In Kormmunity /admin/mcp, "내 활성 연결" should
+   show the connected OAuth client once authorization succeeds.
+
+## Catalog discovery and security
+
+MCP `initialize`, `ping`, and `tools/list` publish static server/tool metadata
+without an OAuth token, so ChatGPT can populate the app tool catalog before login.
+Every tool advertises `securitySchemes: [{type: "oauth2", scopes: ["mcp:tools"]}]`.
+All `tools/call` requests validate a live token and CURRENT active ADMIN role;
+unlinked invocations return `_meta["mcp/www_authenticate"]` so ChatGPT can prompt
+for login. Reading the public static catalog never returns user/account/post data.
+Disallowed browser origins are rejected before discovery.
 
 OAuth supports PKCE S256, authorization codes (5 min, single use), access tokens
 (1 hour), rotating refresh tokens (30 days), public-client DCR, discovery metadata,
