@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { AgentPrincipal } from '@/lib/agent/auth';
+import type { AgentPrincipal, AgentScope } from '@/lib/agent/auth';
 import { assertAgentOwnsPost } from '@/lib/agent/access';
 import { AgentApiError } from '@/lib/agent/http';
 import {
@@ -104,7 +104,7 @@ function getString(input: Input, key: string, required = false) {
 
 function agentFor(actorId: string): AgentPrincipal {
   return { keyId: 'mcp:' + actorId, actorUserId: actorId, name: 'Kormmunity ChatGPT MCP',
-    scopes: new Set(['agent.accounts.read', 'agent.metadata.read', 'agent.posts.read',
+    scopes: new Set<AgentScope>(['agent.accounts.read', 'agent.metadata.read', 'agent.posts.read',
       'agent.posts.write', 'agent.posts.publish']) };
 }
 
