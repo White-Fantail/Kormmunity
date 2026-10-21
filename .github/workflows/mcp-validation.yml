@@ -3,8 +3,6 @@ name: Kormmunity MCP validation
 on:
   pull_request:
     branches: [staging]
-  push:
-    branches: [feat/chatgpt-mcp-persona-publishing]
 
 jobs:
   validate:
