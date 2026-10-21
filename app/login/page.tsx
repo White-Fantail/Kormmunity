@@ -1,9 +1,10 @@
 import Link from 'next/link';
 
 import { loginWithKakaoPlaceholder } from '@/app/login/actions';
+import { safeMcpLoginNext } from '@/lib/mcp/post-login';
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -33,6 +34,7 @@ const demoUsers = [
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
+  const next = safeMcpLoginNext(params.next);
   const errorMessage = params.error ? (ERROR_MESSAGES[params.error] ?? '알 수 없는 오류가 발생했어요.') : null;
 
   return (
@@ -51,7 +53,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       {kakaoConfigured ? (
         <div className="space-y-3">
           <a
-            href="/api/auth/kakao"
+            href={next ? '/api/auth/kakao?next=' + encodeURIComponent(next) : '/api/auth/kakao'}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#fee500] px-4 py-3.5 text-base font-bold text-[#3c1e1e] shadow-sm hover:bg-[#f5db00] active:scale-[0.98]"
           >
             <svg
@@ -88,6 +90,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 <input type="hidden" name="kakaoId" value={user.kakaoId} />
                 <input type="hidden" name="displayName" value={user.displayName} />
                 <input type="hidden" name="role" value={user.role} />
+                {next ? <input type="hidden" name="next" value={next} /> : null}
                 <button
                   type="submit"
                   className="w-full rounded-xl border border-[#e8e8e8] bg-white px-4 py-3 text-left text-sm font-medium hover:border-[#fee500] hover:bg-[#fffde7]"
