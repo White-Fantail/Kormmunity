@@ -4,12 +4,16 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-## Branch Policy
+## Branch Policy — Mandatory (all coding agents)
 
-- **Base branch**: `staging`
-- All agent work (PRs, branches, merges) **must** target `staging`, never `main`.
-- The `staging` → `main` merge is done manually by the repository owner.
-- When creating a pull request, always set the base branch to `staging`.
+- **Implementation branch: `dev`**. All code, tests, migrations, documentation, fixes, and other implementation commits MUST be made on `dev`, not `main` or `staging`. Do not create a feature branch unless the repository owner explicitly requests an exception.
+- Before editing or committing, confirm the checked-out branch is `dev`. When writing through an API or connector, explicitly specify `branch: dev`; never rely on the repository's default branch (`main`).
+- **Release/merge destination: `main`**. Do not merge or advance `main` without an explicit user request.
+- **Fast-forward only** for every requested merge, including `dev` → `main`. Fetch the latest remote refs and verify the destination tip is an ancestor of the source tip before proceeding (`git merge-base --is-ancestor origin/main origin/dev` for `dev` → `main`).
+- Perform the merge with `git merge --ff-only origin/dev` on `main`, or an equivalent non-force ref update that only advances `main` to the existing `dev` commit. Verify `main` equals the intended `dev` SHA afterward.
+- **Never** create a merge commit, squash/rebase-merge PR, force push, or use a GitHub PR merge button that rewrites history instead of true fast-forward.
+- If a fast-forward is impossible (diverged history, stale ref, protection, or missing checks), **stop and report the blocker**. Reconcile history on `dev` only after appropriate review; never silently rewrite history or fall back to another merge strategy.
+- This policy supersedes any older `staging`-based branch instructions elsewhere in the repository.
 
 ## Mandatory Harness-First Rule (All Agents)
 
