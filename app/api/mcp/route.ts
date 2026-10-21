@@ -16,8 +16,8 @@ function jsonRpc(id: unknown, result: unknown, status = 200) {
   return Response.json({ jsonrpc: '2.0', id, result }, { status, headers });
 }
 
-function rpcError(id: unknown, code: number, message: string) {
-  return Response.json({ jsonrpc: '2.0', id, error: { code, message } }, { headers });
+function rpcError(id: unknown, code: number, message: string, status = 200) {
+  return Response.json({ jsonrpc: '2.0', id, error: { code, message } }, { status, headers });
 }
 
 function unauthorized(e: McpOAuthError) {
@@ -67,15 +67,17 @@ export async function POST(request: Request) {
   // 2026-07-28 MCP per-request clients mirror method/tool name in headers.
   // Reject mismatches to prevent method confusion at intermediaries.
   const protocol = request.headers.get('mcp-protocol-version');
-  if (protocol === '2026-07-28' && rpc.method !== 'initialize') {
+  if (protocol === '2026-07-28') {
     const params = rpc.params && typeof rpc.params === 'object' && !Array.isArray(rpc.params)
       ? rpc.params as Record<string, unknown> : {};
     const metadata = params._meta && typeof params._meta === 'object' && !Array.isArray(params._meta)
       ? params._meta as Record<string, unknown> : {};
-    if (request.headers.get('mcp-method') !== rpc.method ||
+    if (!metadata['io.modelcontextprotocol/clientCapabilities'] ||
+      typeof metadata['io.modelcontextprotocol/clientCapabilities'] !== 'object' ||
+      request.headers.get('mcp-method') !== rpc.method ||
       (rpc.method === 'tools/call' && request.headers.get('mcp-name') !== params.name) ||
       metadata['io.modelcontextprotocol/protocolVersion'] !== '2026-07-28') {
-      return rpcError(id, -32600, 'MCP mirrored method/name/protocol headers mismatch.');
+      return rpcError(id, -32020, 'MCP mirrored method/name/protocol headers mismatch.', 400);
     }
   }
   if (rpc.method?.startsWith('notifications/')) return new Response(null, { status: 202, headers });
