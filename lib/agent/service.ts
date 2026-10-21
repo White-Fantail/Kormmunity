@@ -479,7 +479,7 @@ export async function createAgentPost(
     const post = await tx.post.create({
       data: {
         authorId: account.id,
-        createdByUserId: null,
+        createdByUserId: principal.actorUserId ?? null,
         title,
         body: postBody,
         categoryId,
