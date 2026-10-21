@@ -27,6 +27,7 @@ export const adminManagementNavItems = [
   { href: '/admin/search-alerts', label: '검색어 통계' },
   { href: '/admin/users', label: '사용자 관리' },
   { href: '/admin/managed-accounts', label: '운영 계정 관리' },
+  { href: '/admin/mcp', label: 'ChatGPT MCP' },
   { href: '/admin/posts', label: '게시글' },
   { href: '/admin/post-permissions', label: '게시글 권한' },
   { href: '/admin/report-options', label: '신고 옵션' },
