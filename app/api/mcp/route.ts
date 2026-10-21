@@ -1,5 +1,5 @@
 import { AgentApiError } from '@/lib/agent/http';
-import { McpOAuthError, mcpOrigin, mcpResource, requireMcpAccess } from '@/lib/mcp/oauth';
+import { McpOAuthError, mcpOrigin, requireMcpAccess } from '@/lib/mcp/oauth';
 import { callMcpTool, mcpTools } from '@/lib/mcp/tools';
 
 export const runtime = 'nodejs';
@@ -64,6 +64,20 @@ export async function POST(request: Request) {
   }
 
   const id = rpc.id ?? null;
+  // 2026-07-28 MCP per-request clients mirror method/tool name in headers.
+  // Reject mismatches to prevent method confusion at intermediaries.
+  const protocol = request.headers.get('mcp-protocol-version');
+  if (protocol === '2026-07-28' && rpc.method !== 'initialize') {
+    const params = rpc.params && typeof rpc.params === 'object' && !Array.isArray(rpc.params)
+      ? rpc.params as Record<string, unknown> : {};
+    const metadata = params._meta && typeof params._meta === 'object' && !Array.isArray(params._meta)
+      ? params._meta as Record<string, unknown> : {};
+    if (request.headers.get('mcp-method') !== rpc.method ||
+      (rpc.method === 'tools/call' && request.headers.get('mcp-name') !== params.name) ||
+      metadata['io.modelcontextprotocol/protocolVersion'] !== '2026-07-28') {
+      return rpcError(id, -32600, 'MCP mirrored method/name/protocol headers mismatch.');
+    }
+  }
   if (rpc.method?.startsWith('notifications/')) return new Response(null, { status: 202, headers });
   if (rpc.method === 'initialize') {
     const rawParams = rpc.params && typeof rpc.params === 'object'
