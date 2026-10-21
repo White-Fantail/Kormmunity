@@ -1,8 +1,10 @@
 name: Kormmunity MCP validation
 
 on:
+  push:
+    branches: [dev]
   pull_request:
-    branches: [staging]
+    branches: [main]
 
 jobs:
   validate:
