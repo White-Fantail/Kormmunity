@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { getSessionCookieName } from '@/lib/auth/session';
 import { prisma } from '@/lib/db/prisma';
 import { exchangeCodeForToken, getKakaoUserInfo } from '@/lib/kakao/oauth';
+import { MCP_LOGIN_NEXT_COOKIE, safeMcpLoginNext } from '@/lib/mcp/post-login';
 
 
 
@@ -30,6 +31,8 @@ export async function GET(request: NextRequest) {
   const storedState = cookieStore.get(STATE_COOKIE)?.value;
 
   cookieStore.delete(STATE_COOKIE);
+  const next = safeMcpLoginNext(cookieStore.get(MCP_LOGIN_NEXT_COOKIE)?.value);
+  cookieStore.delete(MCP_LOGIN_NEXT_COOKIE);
 
   if (!code || !state || state !== storedState) {
     redirect('/login?error=oauth');
@@ -108,5 +111,5 @@ export async function GET(request: NextRequest) {
     maxAge: sessionMaxAgeSeconds,
   });
 
-  redirect(user.countryId ? '/posts' : '/select-country');
+  redirect(next ?? (user.countryId ? '/posts' : '/select-country'));
 }

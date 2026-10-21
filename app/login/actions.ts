@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { getSessionCookieName, invalidateSessionCache } from '@/lib/auth/session';
 import { isMissingStaffAssignmentTableError } from '@/lib/auth/staff-assignments';
 import { prisma } from '@/lib/db/prisma';
+import { safeMcpLoginNext } from '@/lib/mcp/post-login';
 
 const DEFAULT_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
@@ -138,7 +139,7 @@ export async function loginWithKakaoPlaceholder(formData: FormData) {
     maxAge: sessionMaxAgeSeconds,
   });
 
-  redirect(user.countryId ? '/posts' : '/select-country');
+  redirect(safeMcpLoginNext(formData.get('next')) ?? (user.countryId ? '/posts' : '/select-country'));
 }
 
 export async function logoutAction() {

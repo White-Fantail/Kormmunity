@@ -224,3 +224,7 @@ components/posts/
 ## Next Focus
 - Near-term / Mid-term / Long-term 로드맵 기준으로 진행
 - 상세 로드맵: `docs/future-feature-roadmap.md`
+
+## ChatGPT MCP (Admin only)
+
+Kormmunity supports authenticated ChatGPT MCP publishing for managed PERSONA/OPERATOR accounts. An active Kakao ADMIN can connect via OAuth PKCE, review the selected account's persona and local public discussion, create a substantive draft, and explicitly publish it. Manage connections and revoke tokens at /admin/mcp. Apply migration 20261022093000_mcp_oauth first. See [setup guide](docs/mcp-chatgpt.md).

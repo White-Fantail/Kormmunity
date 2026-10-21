@@ -21,6 +21,7 @@ type AgentApiKeyConfig = {
 
 export type AgentPrincipal = {
   keyId: string;
+  actorUserId?: string;
   name: string | null;
   scopes: Set<AgentScope>;
 };
