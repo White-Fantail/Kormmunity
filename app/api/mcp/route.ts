@@ -42,12 +42,10 @@ async function authorize(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let actor: Awaited<ReturnType<typeof requireMcpAccess>>;
-  try {
-    actor = await authorize(request);
-  } catch (e) {
-    return unauthorized(e instanceof McpOAuthError ? e :
-      new McpOAuthError('server_error', 'MCP authorization unavailable.', 503));
+  // MCP clients need to discover static tools before they have an OAuth token.
+  // Reject unwanted browser origins, but do not authenticate initialize/tools/list.
+  if (!isAllowedOrigin(request.headers.get('origin'))) {
+    return unauthorized(new McpOAuthError('invalid_origin', 'Untrusted MCP Origin.', 403));
   }
   if (Number(request.headers.get('content-length') || 0) > 100_000) {
     return rpcError(null, -32600, 'Request exceeds MCP size limit.');
@@ -108,6 +106,25 @@ export async function POST(request: Request) {
     }
     if (args !== undefined && (!args || typeof args !== 'object' || Array.isArray(args))) {
       return rpcError(id, -32602, 'Tool arguments must be an object.');
+    }
+    // Tool execution still requires a live active Kakao ADMIN on every call.
+    // The MCP auth challenge lives on the tool result, so ChatGPT can offer
+    // to connect when the catalog was discovered without an access token.
+    let actor: Awaited<ReturnType<typeof requireMcpAccess>>;
+    try {
+      actor = await authorize(request);
+    } catch (error) {
+      if (error instanceof McpOAuthError && error.status === 401) {
+        const wwwAuthenticate = challenge() +
+          ', error="invalid_token", error_description="Connect your Kakao administrator account to use this tool"';
+        return jsonRpc(id, {
+          isError: true,
+          content: [{ type: 'text', text: 'Kormmunity administrator login is required.' }],
+          _meta: { 'mcp/www_authenticate': [wwwAuthenticate] },
+        });
+      }
+      return unauthorized(error instanceof McpOAuthError ? error :
+        new McpOAuthError('server_error', 'MCP authorization unavailable.', 503));
     }
     try {
       const data = await callMcpTool(name, (args || {}) as Record<string, unknown>, actor);
