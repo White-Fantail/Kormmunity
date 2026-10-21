@@ -26,11 +26,15 @@ Build a Korean-language, Kakao-friendly community market board for Korean reside
 - Admins make final user restriction/deletion decisions.
 - Every moderation action must be logged.
 
-## Branch Policy
+## Branch Policy (Mandatory)
 
-- All agent PRs must target the **`staging`** branch, not `main`.
-- The `staging` → `main` merge is performed manually by the repository owner.
-- Never open a PR against `main` directly.
+- **Work directly on `dev`** for all implementation, bug fixes, tests, migrations, and documentation. Never write to `main` or `staging` during development; explicitly target `dev` in GitHub API/connector calls (default branch is `main`).
+- `main` is updated only when the user explicitly asks to merge. The normal source is `dev` and destination is `main`; no automatic release.
+- **Use real fast-forward merges only.** Fetch current refs, make sure destination HEAD is an ancestor of source HEAD (e.g. `git merge-base --is-ancestor origin/main origin/dev`), and then advance the destination ref without creating new commits (`git merge --ff-only origin/dev` on `main`, or a non-force equivalent ref update).
+- Verify the resulting destination commit SHA is identical to the approved source commit SHA.
+- Do not use merge commits, squash merge, GitHub rebase merge, force push, or any fallback merge method. If the branches diverge or the update is blocked, stop, explain the blocker, and resolve safely on `dev` before retrying.
+- Do not open a PR targeting the obsolete `staging` branch. If a PR is explicitly requested, target `main` from `dev` for review, but do not use the PR merge action unless it can preserve the exact fast-forward semantics; otherwise advance the ref with the approved fast-forward procedure.
+- This rule takes precedence over legacy documentation mentioning the former `staging` policy.
 
 ## Development Style
 - Implement incrementally by phase.
