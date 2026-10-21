@@ -257,7 +257,7 @@ export async function requireMcpAccess(authorization: string | null) {
 }
 
 export async function revokeMcpToken(form: URLSearchParams) {
-  const clientId = form.get('client_id');
+  const clientId = form.get('client_id') || '';
   const token = form.get('token') || '';
   if (!clientId) invalidClient();
   await prisma.mcpOAuthToken.updateMany({
