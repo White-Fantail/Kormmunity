@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client';
+
 import { prisma } from '@/lib/db/prisma';
 import { AgentApiError } from '@/lib/agent/http';
 import { getAgentAccount, getAgentAccountPosts } from '@/lib/agent/service';
@@ -20,7 +22,7 @@ export async function getPersonaWritingContext(accountId: string) {
   // Mirrors the public feed's country/city scoping and public category policy:
   // include global, country and local posts, but never HELD, DRAFT, DELETED,
   // operator-only, hidden or private moderation material.
-  const andScope: object[] = [];
+  const andScope: Prisma.PostWhereInput[] = [];
   if (owner.countryId) {
     andScope.push({ OR: [{ countryId: owner.countryId }, { countryId: null }] });
   }
@@ -103,7 +105,7 @@ export async function assertPostQuality(accountId: string, title: string | null,
     orderBy: { createdAt: 'desc' }, take: 40,
   });
   for (const existing of prior) {
-    if (similarity(title + ' ' + body, (existing.title || '') + ' ' + existing.body) >= 0.74) {
+    if (similarity((title || '') + ' ' + body, (existing.title || '') + ' ' + existing.body) >= 0.74) {
       throw new AgentApiError('Too similar to a recent post by this persona (' +
         existing.id + '). Choose a different topic or add substantially new value.',
         409, 'duplicate_persona_post');
