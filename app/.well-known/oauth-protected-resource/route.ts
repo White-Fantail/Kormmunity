@@ -6,7 +6,7 @@ export function GET() {
   return Response.json({
     resource: mcpResource(),
     authorization_servers: [mcpOrigin()],
-    scopes_supported: ['mcp:tools', 'offline_access'],
+    scopes_supported: ['mcp:tools'],
     bearer_methods_supported: ['header'],
   }, { headers: { 'Cache-Control': 'public, max-age=300' } });
 }
