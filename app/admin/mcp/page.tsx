@@ -21,8 +21,17 @@ export default async function AdminMcpPage() {
       expiresAt: true, refreshExpiresAt: true },
     orderBy: { createdAt: 'desc' },
   });
+  // Recent authorization codes are safe to inspect by metadata only; never
+  // expose code hashes, OAuth state, access tokens, or refresh tokens.
+  const recentAuthorizations = await prisma.mcpOAuthCode.findMany({
+    where: { userId: actor.id, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+    select: { clientId: true, createdAt: true, expiresAt: true, consumedAt: true, redirectUri: true },
+    orderBy: { createdAt: 'desc' },
+    take: 8,
+  });
   const clients = await prisma.mcpOAuthClient.findMany({
-    where: { id: { in: grants.map((grant) => grant.clientId) } },
+    where: { id: { in: [...new Set([...grants.map((grant) => grant.clientId),
+      ...recentAuthorizations.map((code) => code.clientId)])] } },
     select: { id: true, name: true, createdAt: true },
   });
   return (
@@ -72,6 +81,38 @@ export default async function AdminMcpPage() {
             })}
           </ul>}
         <p className="text-xs text-gray-500">연결을 해제하면 기존 access/refresh token이 즉시 무효화됩니다.</p>
+      </div>
+      <div className="space-y-3 rounded-xl border bg-white p-5">
+        <h2 className="text-lg font-bold">최근 OAuth 인증 처리</h2>
+        <p className="text-xs text-gray-600">
+          연결 승인 이후 ChatGPT가 실제로 인증 코드를 교환했는지 확인할 수 있습니다.
+          코드, state, 토큰 값은 표시하거나 기록하지 않습니다.
+        </p>
+        {recentAuthorizations.length === 0 ? (
+          <p className="text-sm text-gray-500">지난 24시간 동안 인증 승인이 없습니다.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {recentAuthorizations.map((auth, index) => {
+              const name = clients.find((client) => client.id === auth.clientId)?.name ?? '외부 MCP 앱';
+              const status = auth.consumedAt ? '토큰 교환 완료'
+                : auth.expiresAt <= new Date() ? '인증 코드 만료 · 토큰 교환 없음'
+                  : '토큰 교환 대기';
+              return (
+                <li key={auth.clientId + auth.createdAt.toISOString() + index}
+                  className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                  <div>
+                    <p className="font-medium">{name}</p>
+                    <p className="text-xs text-gray-500">
+                      {auth.createdAt.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' })}
+                      {' · '}콜백: {new URL(auth.redirectUri).hostname}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-700">{status}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </section>
   );
