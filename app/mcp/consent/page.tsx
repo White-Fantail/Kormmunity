@@ -34,6 +34,10 @@ export default async function McpConsentPage({ searchParams }: Props) {
         {' / '}권한: {params.scope}
         {' / '}연결 앱: {params.clientName}
       </p>
+      <p className="text-xs text-gray-500">
+        ChatGPT에서 시작한 인증 창을 그대로 사용해 승인하세요. 인증 도중 새 창이나
+        새 탭으로 승인 주소를 옮기면 ChatGPT가 콜백 정보를 찾지 못할 수 있습니다.
+      </p>
       <form action={'/api/oauth/authorize?' + query.toString()} method="post" className="flex gap-3">
         <button type="submit" name="decision" value="approve"
           className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white">연결 승인</button>
