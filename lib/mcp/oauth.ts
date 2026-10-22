@@ -20,6 +20,9 @@ export function mcpOrigin() {
     throw new McpOAuthError('server_error', 'Configure NEXT_PUBLIC_SITE_URL to use MCP.', 503);
   }
   const url = new URL(configured || 'http://localhost:3000');
+  // www is no longer the canonical OAuth issuer. Normalize stale deployment
+  // environment values to prevent resource/audience mismatch after redirects.
+  if (url.hostname.toLowerCase() === 'www.kormmunity.com') return 'https://kormmunity.com';
   return url.origin;
 }
 
