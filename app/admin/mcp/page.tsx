@@ -17,7 +17,8 @@ export default async function AdminMcpPage() {
   const grants = await prisma.mcpOAuthToken.findMany({
     where: { userId: actor.id, revokedAt: null,
       OR: [{ expiresAt: { gt: new Date() } }, { refreshExpiresAt: { gt: new Date() } }] },
-    select: { clientId: true, createdAt: true },
+    select: { clientId: true, createdAt: true, refreshHash: true,
+      expiresAt: true, refreshExpiresAt: true },
     orderBy: { createdAt: 'desc' },
   });
   const clients = await prisma.mcpOAuthClient.findMany({
@@ -45,11 +46,20 @@ export default async function AdminMcpPage() {
         <h2 className="text-lg font-bold">내 활성 연결</h2>
         {clients.length === 0 ? <p className="text-sm text-gray-500">활성 연결이 없습니다.</p> :
           <ul className="space-y-3">
-            {clients.map((client) => (
+            {clients.map((client) => {
+              const activeRefresh = grants.find((grant) => grant.clientId === client.id &&
+                grant.refreshHash && grant.refreshExpiresAt && grant.refreshExpiresAt > new Date());
+              return (
               <li key={client.id} className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
                 <div>
                   <p className="font-semibold">{client.name}</p>
                   <p className="text-xs text-gray-500">연결 ID: {client.id.slice(0, 10)}…</p>
+                  <p className="text-xs text-gray-600">
+                    {activeRefresh && activeRefresh.refreshExpiresAt
+                      ? '자동 갱신 가능 · 갱신 토큰 만료: ' +
+                        activeRefresh.refreshExpiresAt.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' })
+                      : '자동 갱신 토큰 없음 · 토큰 만료 후 재연결 필요'}
+                  </p>
                 </div>
                 <form action={revokeMcpClientAction}>
                   <input type="hidden" name="clientId" value={client.id} />
@@ -58,7 +68,8 @@ export default async function AdminMcpPage() {
                   </button>
                 </form>
               </li>
-            ))}
+              );
+            })}
           </ul>}
         <p className="text-xs text-gray-500">연결을 해제하면 기존 access/refresh token이 즉시 무효화됩니다.</p>
       </div>
