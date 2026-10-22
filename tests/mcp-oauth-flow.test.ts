@@ -99,7 +99,11 @@ function setup() {
         clientId, redirectUri, state: 'client-state-abc', challenge,
         scope: scopes, resource, clientName: 'ChatGPT',
       });
-      const code = new URL(redirect).searchParams.get('code');
+      const responseParams = new URL(redirect).searchParams;
+      const code = responseParams.get('code');
+      assert.equal(responseParams.get('state'), 'client-state-abc');
+      assert.equal(responseParams.get('iss'), 'https://kormmunity.com');
+      assert.ok(code);
       return oauth.exchangeMcpToken(new URLSearchParams({
         grant_type: 'authorization_code', client_id: clientId, code,
         redirect_uri: redirectUri, code_verifier: verifier, resource,
@@ -120,6 +124,32 @@ test('stale www configuration resolves to the canonical non-www OAuth resource',
     { '@/lib/db/prisma': { prisma: {} } }, 'https://www.kormmunity.com');
   assert.equal(oauth.mcpOrigin(), 'https://kormmunity.com');
   assert.equal(oauth.mcpResource(), 'https://kormmunity.com/api/mcp');
+});
+
+test('RFC 9207 issuer binding is advertised and returned on success and denial', async () => {
+  const { oauth, client } = setup();
+  const metadata = loadModule('app/.well-known/oauth-authorization-server/route.ts', {
+    '@/lib/mcp/oauth': { mcpOrigin: oauth.mcpOrigin },
+  });
+  const discovery = await metadata.GET().json();
+  assert.equal(discovery.issuer, 'https://kormmunity.com');
+  assert.equal(discovery.authorization_response_iss_parameter_supported, true);
+  const params = {
+    redirectUri: 'https://chatgpt.com/connector_platform_oauth_redirect',
+    state: 'safe-state-123', clientId: 'chatgpt-client',
+    challenge: 'a'.repeat(43), resource: client.resource,
+    scope: 'mcp:tools', clientName: 'ChatGPT',
+  };
+  const approved = new URL(await oauth.approveMcpAuthorization('admin', params));
+  assert.equal(approved.origin + approved.pathname, params.redirectUri);
+  assert.equal(approved.searchParams.get('iss'), discovery.issuer);
+  assert.equal(approved.searchParams.get('state'), params.state);
+  assert.ok(approved.searchParams.has('code'));
+  const denied = new URL(oauth.denyMcpAuthorization(params));
+  assert.equal(denied.searchParams.get('error'), 'access_denied');
+  assert.equal(denied.searchParams.get('state'), params.state);
+  assert.equal(denied.searchParams.get('iss'), discovery.issuer);
+  assert.equal(denied.searchParams.has('code'), false);
 });
 
 test('mcp:tools-only OAuth exchange issues a usable 30-day refresh token', async () => {
