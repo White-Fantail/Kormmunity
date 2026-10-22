@@ -9,7 +9,7 @@ import ts from 'typescript';
 
 const nodeRequire = createRequire(import.meta.url);
 
-function loadModule(path, dependencies) {
+function loadModule(path, dependencies, origin = 'https://kormmunity.com') {
   const source = readFileSync(path, 'utf8');
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -23,7 +23,7 @@ function loadModule(path, dependencies) {
       throw new Error('Unexpected mocked dependency: ' + id);
     },
     Buffer, Date, URL, URLSearchParams, Request, Response,
-    process: { env: { NEXT_PUBLIC_SITE_URL: 'https://kormmunity.com', NODE_ENV: 'test' } },
+    process: { env: { NEXT_PUBLIC_SITE_URL: origin, NODE_ENV: 'test' } },
   }, { filename: path });
   return module.exports;
 }
@@ -114,6 +114,13 @@ function setup() {
   };
   return { oauth, rows, client, failNextCreate(flag) { failTokenCreate = flag; } };
 }
+
+test('stale www configuration resolves to the canonical non-www OAuth resource', () => {
+  const oauth = loadModule('lib/mcp/oauth.ts',
+    { '@/lib/db/prisma': { prisma: {} } }, 'https://www.kormmunity.com');
+  assert.equal(oauth.mcpOrigin(), 'https://kormmunity.com');
+  assert.equal(oauth.mcpResource(), 'https://kormmunity.com/api/mcp');
+});
 
 test('mcp:tools-only OAuth exchange issues a usable 30-day refresh token', async () => {
   const { client, oauth, rows } = setup();
