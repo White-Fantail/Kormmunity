@@ -58,7 +58,9 @@ Persistent DB grants store SHA-256 hashes rather than tokens.
   automatically. If ChatGPT cached older OAuth discovery metadata, refresh or
   recreate its custom app. Keep the canonical origin at
   `https://kormmunity.com` (never redirect OAuth token endpoint requests
-  across hosts).
+  across hosts). The MCP issuer normalizes stale `www.kormmunity.com`
+  environment configuration to the non-www canonical host. Existing tokens
+  issued for the old www resource must be linked again.
 - Test a real client end-to-end: authorize without offline_access; confirm
   refresh_token exists; refresh after access expiry and verify the new tokens;
   test a second refresh, old-token replay, expiry, revocation and role removal.
