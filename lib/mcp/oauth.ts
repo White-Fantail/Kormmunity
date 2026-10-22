@@ -148,6 +148,8 @@ export async function approveMcpAuthorization(userId: string, params: AuthorizeP
   const destination = new URL(params.redirectUri);
   destination.searchParams.set('code', code);
   destination.searchParams.set('state', params.state);
+  // RFC 9207: issuer-bound responses let ChatGPT use its stable OAuth callback.
+  destination.searchParams.set('iss', mcpOrigin());
   return destination.toString();
 }
 
@@ -155,6 +157,7 @@ export function denyMcpAuthorization(params: AuthorizeParams) {
   const destination = new URL(params.redirectUri);
   destination.searchParams.set('error', 'access_denied');
   destination.searchParams.set('state', params.state);
+  destination.searchParams.set('iss', mcpOrigin());
   return destination.toString();
 }
 
