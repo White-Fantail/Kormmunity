@@ -27,16 +27,43 @@ MCP `initialize`, `ping`, and `tools/list` publish static server/tool metadata
 without an OAuth token, so ChatGPT can populate the app tool catalog before login.
 Every tool advertises `securitySchemes: [{type: "oauth2", scopes: ["mcp:tools"]}]`.
 All `tools/call` requests validate a live token and CURRENT active ADMIN role;
-unlinked invocations return `_meta["mcp/www_authenticate"]` so ChatGPT can prompt
-for login. Reading the public static catalog never returns user/account/post data.
+an initial invocation without a Bearer token returns `_meta["mcp/www_authenticate"]`
+so ChatGPT can prompt for login. An expired/invalid supplied Bearer token receives
+HTTP 401 plus WWW-Authenticate, allowing the client to refresh. Reading the public static catalog never returns user/account/post data.
 Disallowed browser origins are rejected before discovery.
 
 OAuth supports PKCE S256, authorization codes (5 min, single use), access tokens
-(1 hour), rotating refresh tokens (30 days), public-client DCR, discovery metadata,
+(1 hour), rotating refresh tokens (30 days of inactivity, renewed on use), public-client DCR, discovery metadata,
 grant revocation and per-request checking of CURRENT active ADMIN status. Client
 redirect hosts are restricted to ChatGPT/OpenAI/Claude or those expressly listed in
 MCP_ALLOWED_CLIENT_HOSTS. Credentials and authorization/refresh codes are not logged.
 Persistent DB grants store SHA-256 hashes rather than tokens.
+
+### Long-lived ChatGPT linking
+- The authorization-server metadata advertises `offline_access` and `refresh_token`.
+  `offline_access` is optional for the authorization request, **not** a scope
+  needed to access MCP tools, so the protected-resource metadata and the 401
+  challenge require only `mcp:tools` (per MCP OAuth guidance).
+- Every approved administrator authorization-code exchange issues a refresh
+  token, including older ChatGPT clients that send only `mcp:tools`. Consent
+  explicitly discloses this persistent grant.
+- Refresh uses a single DB transaction to consume the old refresh hash and
+  create its replacement. It does not revoke the already-issued access token;
+  concurrent in-flight calls remain valid until that token's one-hour expiry.
+  A replay of the *old* refresh token is rejected with `invalid_grant`.
+- The /admin/mcp page shows whether the connection has an active refresh token
+  and its expiry, without ever exposing token values.
+- **Rollout:** after deploying, check /admin/mcp. Connections created before
+  this fix without a refresh token must be linked once more; new grants rotate
+  automatically. If ChatGPT cached older OAuth discovery metadata, refresh or
+  recreate its custom app. Keep the canonical origin at
+  `https://kormmunity.com` (never redirect OAuth token endpoint requests
+  across hosts).
+- Test a real client end-to-end: authorize without offline_access; confirm
+  refresh_token exists; refresh after access expiry and verify the new tokens;
+  test a second refresh, old-token replay, expiry, revocation and role removal.
+  Do not claim ChatGPT's background refresh is verified solely from unit tests.
+
 
 ## Tools
 
