@@ -6,6 +6,9 @@ export function GET() {
   const origin = mcpOrigin();
   return Response.json({
     issuer: origin,
+    // RFC 9207: both successful and denied redirects include the exact issuer.
+    // ChatGPT can consequently use /connector_platform_oauth_redirect.
+    authorization_response_iss_parameter_supported: true,
     authorization_endpoint: origin + '/api/oauth/authorize',
     token_endpoint: origin + '/api/oauth/token',
     registration_endpoint: origin + '/api/oauth/register',
