@@ -1,3 +1,4 @@
+// @ts-nocheck -- In-memory mock harness intentionally exercises compiled modules dynamically.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
