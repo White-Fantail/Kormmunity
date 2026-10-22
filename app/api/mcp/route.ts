@@ -9,7 +9,7 @@ const headers = { 'Cache-Control': 'no-store' };
 
 function challenge() {
   return 'Bearer realm="Kormmunity MCP", resource_metadata="' +
-    mcpOrigin() + '/.well-known/oauth-protected-resource/api/mcp", scope="mcp:tools offline_access"';
+    mcpOrigin() + '/.well-known/oauth-protected-resource/api/mcp", scope="mcp:tools"';
 }
 
 function jsonRpc(id: unknown, result: unknown, status = 200) {
@@ -22,7 +22,9 @@ function rpcError(id: unknown, code: number, message: string, status = 200) {
 
 function unauthorized(e: McpOAuthError) {
   return Response.json({ error: e.code, error_description: e.message },
-    { status: e.status, headers: { ...headers, ...(e.status === 401 ? { 'WWW-Authenticate': challenge() } : {}) } });
+    { status: e.status, headers: { ...headers, ...(e.status === 401 ? {
+      'WWW-Authenticate': challenge() + (e.code === 'invalid_token' ? ', error="invalid_token"' : ''),
+    } : {}) } });
 }
 
 function isAllowedOrigin(origin: string | null) {
@@ -115,6 +117,10 @@ export async function POST(request: Request) {
       actor = await authorize(request);
     } catch (error) {
       if (error instanceof McpOAuthError && error.status === 401) {
+        // The initial unauthenticated tool call needs MCP's linking metadata.
+        // Once a Bearer token has been supplied, HTTP 401 is essential: clients
+        // use that status to renew an expired access token via refresh_token.
+        if (request.headers.get('authorization')) return unauthorized(error);
         const wwwAuthenticate = challenge() +
           ', error="invalid_token", error_description="Connect your Kakao administrator account to use this tool"';
         return jsonRpc(id, {
