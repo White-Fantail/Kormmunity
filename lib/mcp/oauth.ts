@@ -179,26 +179,37 @@ function verifyPkce(codeVerifier: string, codeChallenge: string) {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-async function issueTokens(userId: string, clientId: string, scope: string, resource: string) {
+// Build the replacement before consuming a refresh token. Both writes are committed
+// together during rotation, so a database error never strands the client.
+function prepareTokens(userId: string, clientId: string, scope: string, resource: string) {
   const accessToken = secret();
-  const refreshToken = scope.split(' ').includes(REFRESH_SCOPE) ? secret() : null;
+  // A refresh token is issued for every approved admin MCP connection. Some MCP
+  // clients request only the protected-resource scope (mcp:tools), not the
+  // authorization-server's optional offline_access scope.
+  const refreshToken = secret();
   const now = Date.now();
-  await prisma.mcpOAuthToken.create({
+  return {
     data: {
       userId, clientId, scope, resource,
       accessHash: digest(accessToken),
-      refreshHash: refreshToken ? digest(refreshToken) : null,
+      refreshHash: digest(refreshToken),
       expiresAt: new Date(now + ACCESS_SECONDS * 1000),
-      refreshExpiresAt: refreshToken ? new Date(now + REFRESH_SECONDS * 1000) : null,
+      refreshExpiresAt: new Date(now + REFRESH_SECONDS * 1000),
     },
-  });
-  return {
-    access_token: accessToken,
-    token_type: 'Bearer',
-    expires_in: ACCESS_SECONDS,
-    scope,
-    ...(refreshToken ? { refresh_token: refreshToken } : {}),
+    response: {
+      access_token: accessToken,
+      token_type: 'Bearer' as const,
+      expires_in: ACCESS_SECONDS,
+      scope,
+      refresh_token: refreshToken,
+    },
   };
+}
+
+async function issueTokens(userId: string, clientId: string, scope: string, resource: string) {
+  const issued = prepareTokens(userId, clientId, scope, resource);
+  await prisma.mcpOAuthToken.create({ data: issued.data });
+  return issued.response;
 }
 
 export async function exchangeMcpToken(form: URLSearchParams) {
@@ -233,12 +244,21 @@ export async function exchangeMcpToken(form: URLSearchParams) {
       throw new McpOAuthError('invalid_grant', 'Expired or invalid refresh token.');
     }
     await requireCurrentAdmin(old.userId);
-    const revoked = await prisma.mcpOAuthToken.updateMany({
-      where: { id: old.id, refreshHash: digest(incoming), revokedAt: null },
-      data: { revokedAt: new Date(), refreshHash: null },
+    const issued = prepareTokens(old.userId, clientId, old.scope, old.resource);
+    await prisma.$transaction(async (tx) => {
+      const consumed = await tx.mcpOAuthToken.updateMany({
+        where: { id: old.id, refreshHash: digest(incoming), revokedAt: null,
+          refreshExpiresAt: { gt: new Date() } },
+        // Invalidate only the old refresh token. An existing access token can
+        // continue serving in-flight requests until its own normal expiry.
+        data: { refreshHash: null },
+      });
+      if (consumed.count !== 1) {
+        throw new McpOAuthError('invalid_grant', 'Refresh token already rotated.');
+      }
+      await tx.mcpOAuthToken.create({ data: issued.data });
     });
-    if (revoked.count !== 1) throw new McpOAuthError('invalid_grant', 'Refresh token already rotated.');
-    return issueTokens(old.userId, clientId, old.scope, old.resource);
+    return issued.response;
   }
   throw new McpOAuthError('unsupported_grant_type', 'Use authorization_code or refresh_token.');
 }
