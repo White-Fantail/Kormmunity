@@ -20,7 +20,10 @@ export async function POST(request: NextRequest) {
     const destination = body.get('decision') === 'approve'
       ? await approveMcpAuthorization(user.id, params)
       : denyMcpAuthorization(params);
-    return NextResponse.redirect(destination, { status: 303 });
+    const response = NextResponse.redirect(destination, { status: 303 });
+    // Authorization codes are short-lived credentials; never cache redirects.
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
   } catch (error) {
     const e = error instanceof McpOAuthError ? error :
       new McpOAuthError('server_error', 'Unable to authorize MCP.', 500);
